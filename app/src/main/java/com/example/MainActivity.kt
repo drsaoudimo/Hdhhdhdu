@@ -200,12 +200,18 @@ fun SacredFactorizerScreen() {
                 }
             }
 
+            var selectedStrategy by remember { mutableStateOf("Auto-Hybrid") }
+            val strategies = listOf("Auto-Hybrid", "Sacred A1", "GCD Tree", "SVD-NTT", "Pollard-Brent")
+
             // Carousel Section
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { StrategyChip("Sacred A1", active = true) }
-                item { StrategyChip("GCD Tree", active = false) }
-                item { StrategyChip("SVD-NTT", active = false) }
-                item { StrategyChip("Pollard Rho", active = false) }
+                items(strategies) { strategy ->
+                    StrategyChip(
+                        text = strategy,
+                        active = selectedStrategy == strategy,
+                        onClick = { selectedStrategy = strategy }
+                    )
+                }
             }
 
             // Live Log Terminal Region
@@ -291,7 +297,7 @@ fun SacredFactorizerScreen() {
                         logs.clear()
                         try {
                             val n = BigInteger(inputN)
-                            val res = SacredFactorizer.factorize(n) { logLine ->
+                            val res = SacredFactorizer.factorize(n, selectedStrategy) { logLine ->
                                 withContext(Dispatchers.Main) {
                                     logs.add(logLine)
                                 }
@@ -329,15 +335,17 @@ fun SacredFactorizerScreen() {
 }
 
 @Composable
-fun StrategyChip(text: String, active: Boolean) {
+fun StrategyChip(text: String, active: Boolean, onClick: () -> Unit = {}) {
     val bg = if (active) Color(0xFF6750A4) else Color(0xFFEADDFF)
     val color = if (active) Color.White else Color(0xFF21005D)
-    Box(
-        modifier = Modifier
-            .background(bg, RoundedCornerShape(50))
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+    Surface(
+        color = bg,
+        shape = RoundedCornerShape(50),
+        onClick = onClick
     ) {
-        Text(text, color = color, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text(text, color = color, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        }
     }
 }
 

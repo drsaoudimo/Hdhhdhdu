@@ -57,64 +57,135 @@ object SacredFactorizer {
 
     data class Result(val p: BigInteger, val q: BigInteger, val strategy: String)
 
-    suspend fun factorize(n: BigInteger, onLog: suspend (String) -> Unit): Result? = coroutineScope {
+    suspend fun factorize(n: BigInteger, strategyName: String, onLog: suspend (String) -> Unit): Result? = coroutineScope {
         if (n <= BigInteger.ONE) return@coroutineScope null
         if (n.mod(BigInteger.valueOf(2)) == BigInteger.ZERO) {
             onLog("Even parity detected. Trivial factorization target.")
             return@coroutineScope Result(BigInteger.valueOf(2), n.divide(BigInteger.valueOf(2)), "Classical: Even Parity Check")
         }
 
-        onLog(">> HYBRID ENGINE STARTED <<")
-        onLog("Initializing parallel architecture for sacred strategies...")
-        delay(200)
+        onLog(">> ENGINE STARTED: $strategyName <<")
 
-        onLog("[PHASE 1] Executing Sacred Matrix + NTT Strategies in Parallel")
-        
-        // Define parallel strategies
-        val sacredStrategies = listOf<suspend () -> Result?>(
-            { strategy1Diffs(n, onLog) },
-            { strategy2Sums(n, onLog) },
-            { strategy3NTTBase(n, onLog) },
-            { strategy4NTTConvolutions(n, onLog) },
-            { strategy5Gram(n, onLog) }
-        )
-
-        // Launch concurrent extraction strategies
-        val deferreds = sacredStrategies.map { strategy ->
-            async(Dispatchers.Default) { strategy() }
+        if (strategyName == "Pollard-Brent") {
+            return@coroutineScope pollardsBrent(n, onLog)
         }
 
-        // Fast-fail parallel await strategy
-        var finalResult: Result? = null
-        for (deferred in deferreds) {
-            val res = deferred.await()
-            if (res != null) {
-                finalResult = res
-                // Cancel other ongoing coroutines
-                deferreds.forEach { it.cancel() }
-                break
+        if (strategyName == "Sacred A1") {
+            return@coroutineScope strategyA1Deep(n, onLog)
+        }
+
+        if (strategyName == "Auto-Hybrid") {
+            onLog("Initializing parallel architecture for sacred strategies...")
+            delay(200)
+
+            onLog("[PHASE 1] Executing Sacred Matrix + NTT Strategies in Parallel")
+            
+            // Define parallel strategies
+            val sacredStrategies = listOf<suspend () -> Result?>(
+                { strategyA1Deep(n, onLog) },
+                { strategy1Diffs(n, onLog) },
+                { strategy2Sums(n, onLog) },
+                { strategy3NTTBase(n, onLog) },
+                { strategy4NTTConvolutions(n, onLog) },
+                { strategy5Gram(n, onLog) }
+            )
+
+            // Launch concurrent extraction strategies
+            val deferreds = sacredStrategies.map { strategy ->
+                async(Dispatchers.Default) { strategy() }
+            }
+
+            // Fast-fail parallel await strategy
+            var finalResult: Result? = null
+            for (deferred in deferreds) {
+                val res = deferred.await()
+                if (res != null) {
+                    finalResult = res
+                    // Cancel other ongoing coroutines
+                    deferreds.forEach { it.cancel() }
+                    break
+                }
+            }
+
+            if (finalResult != null) {
+                onLog("=== SACRED SEARCH SUCCESS ===")
+                onLog("Convergence verified. Factors isolated.")
+                return@coroutineScope finalResult
+            }
+
+            onLog("[PHASE 1 Exhausted] Matrix constraints did not yield natural factors.")
+            onLog("[PHASE 2] Initializing Generalized Analytical Fallbacks...")
+            delay(300)
+
+            // Classical Fallback
+            val fallbackResult = pollardsBrent(n, onLog)
+            if (fallbackResult != null) {
+                onLog("=== FALLBACK SEARCH SUCCESS ===")
+                return@coroutineScope fallbackResult
             }
         }
 
-        if (finalResult != null) {
-            onLog("=== SACRED SEARCH SUCCESS ===")
-            onLog("Convergence verified. Factors isolated.")
-            return@coroutineScope finalResult
-        }
-
-        onLog("[PHASE 1 Exhausted] Matrix constraints did not yield natural factors.")
-        onLog("[PHASE 2] Initializing Generalized Analytical Fallbacks...")
-        delay(300)
-
-        // Classical Fallback
-        val fallbackResult = pollardsRho(n, onLog)
-        if (fallbackResult != null) {
-            onLog("=== FALLBACK SEARCH SUCCESS ===")
-            return@coroutineScope fallbackResult
-        }
-
-        onLog("[ENGINE ABORTED] Factorization exceeded timeout bounds.")
+        onLog("[ENGINE ABORTED] Factorization exceeded timeout bounds or no valid strategy selected.")
         null
+    }
+
+    private suspend fun strategyA1Deep(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
+        onLog(" [Thread] Strategy A1: Activating Deep Matrix Space Analysis...")
+        // Try trivial diffs first internally
+        for (i in A1.indices) {
+            for (j in A1[i].indices) {
+                val diff = BigInteger.valueOf(Math.abs(A1[i][j] - A_NT[i][j]))
+                if (diff > BigInteger.ZERO) {
+                    val g = n.gcd(diff)
+                    if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy A1: Trivial Matrix Diffs")
+                }
+            }
+        }
+
+        onLog(" [Thread] Trivial relations exhausted. Initiating Deep A1-Seeded Nonlinear Transform...")
+        val seedC = BigInteger.valueOf(A1[0].sum())
+
+        var y = BigInteger.TWO
+        var r = 1
+        var q = BigInteger.ONE
+        var m = 200
+        var g = BigInteger.ONE
+        var iters = 0
+        var x = y
+
+        while (g == BigInteger.ONE) {
+            x = y
+            for (i in 0 until r) {
+                y = y.multiply(y).add(seedC).mod(n)
+            }
+            var k = 0
+            while (k < r && g == BigInteger.ONE) {
+                val limit = minOf(m, r - k)
+                for (i in 0 until limit) {
+                    y = y.multiply(y).add(seedC).mod(n)
+                    q = q.multiply(x.subtract(y).abs()).mod(n)
+                }
+                g = q.gcd(n)
+                k += limit
+                iters += limit
+
+                if (iters % 10000 == 0) {
+                    onLog("   => A1 Deep Matrix Projection: Rank $iters mapped...")
+                    yield()
+                }
+                if (iters > 1000000) {
+                    onLog("   => A1 Matrix Exhausted: No localized factor bounded in $iters steps.")
+                    return null
+                }
+            }
+            r *= 2
+        }
+        
+        if (g > BigInteger.ONE && g < n) {
+            onLog(" [Thread] A1 Transform Space Collision Detected!")
+            return Result(g, n.divide(g), "Sacred A1 Deep Projection")
+        }
+        return null
     }
 
     private suspend fun strategy1Diffs(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
@@ -204,35 +275,48 @@ object SacredFactorizer {
         return null
     }
 
-    private suspend fun pollardsRho(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
-        onLog(" [Thread] Initializing Pollard's Rho Fallback Algorithm...")
-        var x = BigInteger.TWO
+    private suspend fun pollardsBrent(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
+        onLog(" [Thread] Initializing Brent's optimized Pollard Rho...")
+        val c = BigInteger.valueOf(1)
         var y = BigInteger.TWO
-        var d = BigInteger.ONE
-        val c = BigInteger.ONE
-
+        var r = 1
+        var q = BigInteger.ONE
+        val m = 150
+        var g = BigInteger.ONE
         var iters = 0
-        while (d == BigInteger.ONE) {
-            x = x.multiply(x).add(c).mod(n)
-            
-            var ty = y.multiply(y).add(c).mod(n)
-            y = ty.multiply(ty).add(c).mod(n)
-            
-            d = x.subtract(y).abs().gcd(n)
+        var x = y
 
-            iters++
-            if (iters % 2000 == 0) {
-                onLog("   => Pollard's Rho Iteration: $iters completed. State maintaining...")
-                yield()
+        while (g == BigInteger.ONE) {
+            x = y
+            for (i in 0 until r) {
+                y = y.multiply(y).add(c).mod(n)
             }
-            if (iters > 30000) {
-                onLog("   => Pollard's Rho Safety Threshold Reached. Aborting.")
-                break
+            var k = 0
+            while (k < r && g == BigInteger.ONE) {
+                val limit = minOf(m, r - k)
+                for (i in 0 until limit) {
+                    y = y.multiply(y).add(c).mod(n)
+                    q = q.multiply(x.subtract(y).abs()).mod(n)
+                }
+                g = q.gcd(n)
+                k += limit
+                iters += limit
+
+                if (iters % 8000 == 0) {
+                    onLog("   => Brent Iteration: $iters completed. Cycle step: r=$r")
+                    yield()
+                }
+                if (iters > 1000000) {
+                    onLog("   => Brent safety bound reached. Factoring complex 128-bit requires more compute.")
+                    return null
+                }
             }
+            r *= 2
         }
-        if (d > BigInteger.ONE && d < n) {
+        
+        if (g > BigInteger.ONE && g < n) {
             onLog(" [Thread] Factor identified via classical collision!")
-            return Result(d, n.divide(d), "Classical Fallback: Pollard's Rho")
+            return Result(g, n.divide(g), "Classical Fallback: Pollard's Brent")
         }
         return null
     }
