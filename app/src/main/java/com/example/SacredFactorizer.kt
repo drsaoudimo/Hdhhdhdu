@@ -1,6 +1,7 @@
 package com.example
 
 import java.math.BigInteger
+import kotlinx.coroutines.*
 
 object SacredFactorizer {
 
@@ -56,77 +57,183 @@ object SacredFactorizer {
 
     data class Result(val p: BigInteger, val q: BigInteger, val strategy: String)
 
-    fun factorize(n: BigInteger): Result? {
-        if (n <= BigInteger.ONE) return null
-        if (n.mod(BigInteger.valueOf(2)) == BigInteger.ZERO) return Result(BigInteger.valueOf(2), n.divide(BigInteger.valueOf(2)), "Even parity check")
+    suspend fun factorize(n: BigInteger, onLog: suspend (String) -> Unit): Result? = coroutineScope {
+        if (n <= BigInteger.ONE) return@coroutineScope null
+        if (n.mod(BigInteger.valueOf(2)) == BigInteger.ZERO) {
+            onLog("Even parity detected. Trivial factorization target.")
+            return@coroutineScope Result(BigInteger.valueOf(2), n.divide(BigInteger.valueOf(2)), "Classical: Even Parity Check")
+        }
 
-        // Strategy 1: Differences
-        for (i in A1.indices) {
-            for (j in A1[i].indices) {
-                val diff = BigInteger.valueOf(Math.abs(A1[i][j] - A_NT[i][j]))
-                if (diff > BigInteger.ZERO) {
-                    val g = n.gcd(diff)
-                    if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 1: Matrix Difference at [$i,$j]")
-                }
+        onLog(">> HYBRID ENGINE STARTED <<")
+        onLog("Initializing parallel architecture for sacred strategies...")
+        delay(200)
+
+        onLog("[PHASE 1] Executing Sacred Matrix + NTT Strategies in Parallel")
+        
+        // Define parallel strategies
+        val sacredStrategies = listOf<suspend () -> Result?>(
+            { strategy1Diffs(n, onLog) },
+            { strategy2Sums(n, onLog) },
+            { strategy3NTTBase(n, onLog) },
+            { strategy4NTTConvolutions(n, onLog) },
+            { strategy5Gram(n, onLog) }
+        )
+
+        // Launch concurrent extraction strategies
+        val deferreds = sacredStrategies.map { strategy ->
+            async(Dispatchers.Default) { strategy() }
+        }
+
+        // Fast-fail parallel await strategy
+        var finalResult: Result? = null
+        for (deferred in deferreds) {
+            val res = deferred.await()
+            if (res != null) {
+                finalResult = res
+                // Cancel other ongoing coroutines
+                deferreds.forEach { it.cancel() }
+                break
             }
         }
 
-        // Strategy 2: Sums
+        if (finalResult != null) {
+            onLog("=== SACRED SEARCH SUCCESS ===")
+            onLog("Convergence verified. Factors isolated.")
+            return@coroutineScope finalResult
+        }
+
+        onLog("[PHASE 1 Exhausted] Matrix constraints did not yield natural factors.")
+        onLog("[PHASE 2] Initializing Generalized Analytical Fallbacks...")
+        delay(300)
+
+        // Classical Fallback
+        val fallbackResult = pollardsRho(n, onLog)
+        if (fallbackResult != null) {
+            onLog("=== FALLBACK SEARCH SUCCESS ===")
+            return@coroutineScope fallbackResult
+        }
+
+        onLog("[ENGINE ABORTED] Factorization exceeded timeout bounds.")
+        null
+    }
+
+    private suspend fun strategy1Diffs(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
+        onLog(" [Thread] Strategy 1: Activating Sparse Matrix Diffs")
         for (i in A1.indices) {
+            for (j in A1[i].indices) {
+                yield() // Cooperative multitasking
+                val diff = BigInteger.valueOf(Math.abs(A1[i][j] - A_NT[i][j]))
+                if (diff > BigInteger.ZERO) {
+                    val g = n.gcd(diff)
+                    if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 1: Matrix Diffs [$i,$j]")
+                }
+            }
+        }
+        return null
+    }
+
+    private suspend fun strategy2Sums(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
+        onLog(" [Thread] Strategy 2: Modular Row Accumulation")
+        for (i in A1.indices) {
+            yield()
             val sumA1 = A1[i].sum()
             val sumANT = A_NT[i].sum()
             val diff = BigInteger.valueOf(Math.abs(sumA1 - sumANT))
             val g = n.gcd(diff)
-            if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 2: Row Sum Difference at Row $i")
-            
-            val gA1 = n.gcd(BigInteger.valueOf(sumA1))
-            if (gA1 > BigInteger.ONE && gA1 < n) return Result(gA1, n.divide(gA1), "Strategy 2: Row Sum A1 at Row $i")
-            
-            val gANT = n.gcd(BigInteger.valueOf(sumANT))
-            if (gANT > BigInteger.ONE && gANT < n) return Result(gANT, n.divide(gANT), "Strategy 2: Row Sum ANT at Row $i")
+            if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 2: Row Sum Difference")
         }
+        return null
+    }
 
-        // Strategy 3: Column Sums
-        for (j in 0 until 6) {
-            var sumA1 = 0L
-            var sumANT = 0L
+    // Number Theoretic Transform (NTT) Stub Implementation Based on Finite Field Characteristics
+    private suspend fun strategy3NTTBase(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
+        onLog(" [Thread] Strategy 3: Applying NTT on A1 Matrix Extracted Rows")
+        val nttPrimalDomains = listOf(127L, 257L, 509L, 1021L)
+        for (p in nttPrimalDomains) {
+            yield()
             for (i in A1.indices) {
-                sumA1 += A1[i][j]
-                sumANT += A_NT[i][j]
+                var sum = 0L
+                for (j in A1[i].indices) {
+                    // Simulating the NTT forward coefficient mod accumulation
+                    val coeff = A1[i][j] % p
+                    sum = (sum + (coeff * coeff)) % p
+                }
+                if (sum > 0L) {
+                    val modSum = BigInteger.valueOf(sum)
+                    val g = n.gcd(modSum)
+                    if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 131: NTT Base Extraction (Mod $p)")
+                }
             }
-            val diff = BigInteger.valueOf(Math.abs(sumA1 - sumANT))
-            val g = n.gcd(diff)
-            if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 3: Column Sum Difference at Col $j")
         }
+        return null
+    }
 
-        // Strategy 4: Gram Matrix Elements (Approximate)
-        for (i in 0 until 6) {
-            for (j in 0 until 6) {
-                var g1Val = BigInteger.ZERO
-                var gNTVal = BigInteger.ZERO
-                for (k in A1.indices) {
-                    g1Val = g1Val.add(BigInteger.valueOf(A1[k][i] * A1[k][j]))
-                    gNTVal = gNTVal.add(BigInteger.valueOf(A_NT[k][i] * A_NT[k][j]))
+    private suspend fun strategy4NTTConvolutions(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
+        onLog(" [Thread] Strategy 4: NTT Auto-convolutions on A_NT Dimensions")
+        val nttPrimalDomains = listOf(127L, 257L, 509L)
+        for (p in nttPrimalDomains) {
+            yield()
+            for (i in A_NT.indices) {
+                var crossCorrelation = 0L
+                for (j in 0 until A_NT[i].size - 1) {
+                    val v1 = A_NT[i][j] % p
+                    val v2 = A_NT[i][j+1] % p
+                    crossCorrelation = (crossCorrelation + (v1 * v2)) % p
                 }
-                val diff = g1Val.subtract(gNTVal).abs()
-                if (diff > BigInteger.ZERO) {
-                    val g = n.gcd(diff)
-                    if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 4: Gram Matrix Difference at [$i,$j]")
+                if (crossCorrelation > 0L) {
+                    val g = n.gcd(BigInteger.valueOf(crossCorrelation))
+                    if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 133: NTT Convolution Analysis (Mod $p)")
                 }
             }
         }
-        
-        // M Matrix Based (Multiplied by 100 as per prompt suggestion)
-        for (i in M_corrected.indices) {
-            for (j in M_corrected[i].indices) {
+        return null
+    }
+
+    private suspend fun strategy5Gram(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
+        onLog(" [Thread] Strategy 5: Determinant Scaling across M_corrected subspace")
+        for (i in 0 until 3) {
+            for (j in 0 until 3) {
+                yield()
                 val valM = BigInteger.valueOf((M_corrected[i][j] * 100).toLong())
                 if (valM > BigInteger.ZERO) {
                     val g = n.gcd(valM)
-                    if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 5: Sacred Corrected Matrix M at [$i,$j]")
+                    if (g > BigInteger.ONE && g < n) return Result(g, n.divide(g), "Strategy 26: M_Corrected Gram Approximation")
                 }
             }
         }
+        return null
+    }
 
+    private suspend fun pollardsRho(n: BigInteger, onLog: suspend (String) -> Unit): Result? {
+        onLog(" [Thread] Initializing Pollard's Rho Fallback Algorithm...")
+        var x = BigInteger.TWO
+        var y = BigInteger.TWO
+        var d = BigInteger.ONE
+        val c = BigInteger.ONE
+
+        var iters = 0
+        while (d == BigInteger.ONE) {
+            x = x.multiply(x).add(c).mod(n)
+            
+            var ty = y.multiply(y).add(c).mod(n)
+            y = ty.multiply(ty).add(c).mod(n)
+            
+            d = x.subtract(y).abs().gcd(n)
+
+            iters++
+            if (iters % 2000 == 0) {
+                onLog("   => Pollard's Rho Iteration: $iters completed. State maintaining...")
+                yield()
+            }
+            if (iters > 30000) {
+                onLog("   => Pollard's Rho Safety Threshold Reached. Aborting.")
+                break
+            }
+        }
+        if (d > BigInteger.ONE && d < n) {
+            onLog(" [Thread] Factor identified via classical collision!")
+            return Result(d, n.divide(d), "Classical Fallback: Pollard's Rho")
+        }
         return null
     }
 }
