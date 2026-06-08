@@ -1,0 +1,6 @@
+{
+  "name": "Sacred RSA Factorizer",
+  "description": "Advanced 128-bit RSA factorization using sacred numerical matrices from the Quran and Bible.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
